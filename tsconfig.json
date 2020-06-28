@@ -1,0 +1,27 @@
+{
+    "compilerOptions": {    
+        "baseUrl": ".",
+        "paths": {
+            "*": ["backend/*"]
+        },        
+        "target": "es2016",
+        "module": "commonjs",
+        "moduleResolution": "node",
+        "noImplicitAny": false,
+        "removeComments": true,
+        "preserveConstEnums": true,
+        "sourceMap": false,
+        "rootDir": ".",
+        "outDir": "build",
+        "experimentalDecorators": true,
+        "watch": true,
+        "allowJs": true,
+    },
+    "include": [
+        "backend/**/*"
+    ],
+    "exclude": [
+        "node_modules",
+        "**/*.spec.ts"
+    ]
+}
