@@ -1,4 +1,5 @@
-import Vue, { VNode } from "vue";
+import { Vue } from "vue-property-decorator";
+import { VNode } from "vue";
 
 declare global {
   namespace JSX {

@@ -1,93 +1,120 @@
-import * as cheerio from 'cheerio';
-import * as toraxios from 'tor-axios';
-import * as puppeteer from 'puppeteer';
-import * as fs from 'fs';
-import { promises } from 'fs';
-import { Stream } from 'stream';
+import * as fs from "fs";
+import * as toraxios from "tor-axios";
+import axios from "axios";
+import { promises } from "fs";
+import { Op } from "sequelize";
+import { Model } from "sequelize/types";
+
+import { LibGenreList, LibBook, LibAuthorName, LibBAnnotation } from "../db";
+import { Stream } from "stream";
 
 const tor = toraxios.torSetup({
-    ip: 'localhost',
-    port: 9050,
+  ip: "localhost",
+  port: 9050,
 });
 
-export const authorPage = async (id): Promise<string> =>{
-    const response = (await tor.get(`http://flibustahezeous3.onion/a/${id}`)).data;
-    
-    const $ = cheerio.load(response);
-    const url = $('a[href*="/read"]+a:contains("epub")').get().map((x)=>$(x).attr('href'));
-    console.log(url);
+export const getGenreBooks = async (id): Promise<Model<any, any>[]> => {
+  const genres = await LibBook.findAll({
+    include: [
+      {
+        model: LibGenreList,
+        where: { GenreId: id },
+      },
+      LibAuthorName,
+    ],
+  });
+  return genres;
+};
 
-    return url;
-}
+export const getGenreList = async (): Promise<Model<any, any>[]> => {
+  const genres = await LibGenreList.findAll({});
+  return genres;
+};
 
-export const getBook = async (id): Promise<Buffer> => {
-    const start = Date.now();
-    try{
-        await promises.mkdir("./cached");
-    }
-    catch(ex){
-        console.error("Folder already exists");
-    }
-    console.log(1, Date.now() - start);
-    
-    const bookPath = `./cached/book.${id}.epub`;
-    try{
-        await promises.stat(bookPath);
-        const fileCached = await promises.readFile(bookPath);
-        console.log('created');
-        return fileCached;
-    }
-    catch(ex){
-        console.error("File not cached");
-    }
-    console.log(2, Date.now() - start);
+export const getSearchBooks = async (type, str): Promise<Model<any, any>[]> => {
+  const searchParams =
+    type === "book"
+      ? {
+          Title: {
+            [Op.like]: `%${str}%`,
+          },
+        }
+      : {
+          "$libavtorname_models.FirstName$": {
+            [Op.like]: `%${str}%`,
+          },
+          "$libavtorname_models.LastName$": {
+            [Op.like]: `%${str}%`,
+          },
+        };
 
-    const response = (await tor.get(`http://flibustahezeous3.onion/b/${id}/epub`, {
-        responseType: "arraybuffer"
-    })).data;
-    console.log(3, Date.now() - start);
-    
-    await promises.writeFile(bookPath, response, {encoding: null});
-    return response;
-}
+  // add index to annotation
+  const books = await LibBook.findAll({
+    where: {
+      [Op.or]: searchParams,
+    },
+    include: [
+      {
+        model: LibAuthorName,
+        attributes: ["FirstName", "LastName"],
+      },
+      {
+        model: LibBAnnotation,
+        attributes: ["Body"],
+      },
+    ],
+    attributes: ["BookId", "Title", "Modified", "Deleted"],
+  });
 
-export const getBookPDF = async (id, width, height): Promise<Buffer> =>{
-    console.log(1);
-    try{
-        await promises.mkdir("./cached");
-    }
-    catch(ex){
-        console.error("Folder already exists");
-    }
-    const bookPath = `./cached/book.${id}.${width}.${height}.pdf`;
+  //eslint-disable-next-line
+  //@ts-ignore
+  return books.filter((x) => x.Deleted !== "1");
+};
 
-    console.log(2);
-    try{
-        const fileCached = await promises.readFile(bookPath);
-        return fileCached;
-    }
-    catch(ex){
-        console.error("File not cached");
-    }
-    
-    const response = (await tor.get(`http://flibustahezeous3.onion/b/${id}/read`)).data;
-    const $ = cheerio.load(response);
-    const html = $('.book').get().map(x=>$(x).html()).join('<br>');
+export const getBook = async (id, type = "epub"): Promise<Stream> => {
+  const start = Date.now();
+  try {
+    await promises.mkdir("./cached");
+  } catch (ex) {
+    console.error("Folder already exists");
+  }
+  console.log(1, Date.now() - start);
 
-    const browser = await puppeteer.launch({ headless: true });
-    const page = await browser.newPage();
-    await page.setContent(html);
-    const pdf = await page.pdf({
-        height: height / 0.75,
-        width: width / 0.75,
-        scale: 1 / 0.75,
-        printBackground: true,
-     });
-   
-     console.log(3);
-    await browser.close();
-    await promises.writeFile(bookPath, pdf);
+  const bookPath = `./cached/book.${id}.${type}`;
+  try {
+    await promises.stat(bookPath);
+    const fileCached = await fs.createReadStream(bookPath);
+    console.log("created");
+    return fileCached;
+  } catch (ex) {
+    console.error("File not cached");
+  }
+  console.log(2, Date.now() - start);
 
-    console.log(4);
-    return pdf;
-}
+  /* console.log('try change session');
+    await tor.torNewSession();
+    console.log('session changed'); */
+
+  console.log(`http://flibustahezeous3.onion/b/${id}/${type}`);
+
+  const flibustaUrl = `http://flibusta.is/b/${id}/${type}`;
+  const headInfo = await axios(flibustaUrl, { method: "HEAD" });
+  const isFileAvailable =
+    headInfo.status === 200 && headInfo.headers["content-length"] > 50000;
+
+  console.log("Is download from tor:", !isFileAvailable);
+
+  const axiosObj = !isFileAvailable ? tor : axios;
+  const axiosURL = !isFileAvailable
+    ? `http://flibustahezeous3.onion/b/${id}/${type}`
+    : flibustaUrl;
+
+  const responseStream = (await axiosObj.get(axiosURL, {
+    responseType: "stream",
+    onDownloadProgress: (progress) => {
+      console.log("Progress", progress);
+    },
+  })).data;
+  responseStream.pipe(fs.createWriteStream(bookPath));
+  return responseStream;
+};

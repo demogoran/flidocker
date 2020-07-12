@@ -18,34 +18,84 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const fastify_decorators_1 = require("fastify-decorators");
 const flibusta_1 = require("../services/flibusta");
 let FlibustaController = class FlibustaController {
-    author() {
+    genrelist() {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                const bookURL = yield flibusta_1.authorPage(107253);
-                return bookURL;
+                const genres = yield flibusta_1.getGenreList();
+                return genres;
             }
             catch (ex) {
                 throw Error(ex.message);
             }
         });
     }
-    book() {
+    genrebooks(Request) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                return yield flibusta_1.getBook(584013);
+                const { id } = Request.params;
+                const genres = yield flibusta_1.getGenreBooks(id);
+                return genres;
             }
             catch (ex) {
+                throw Error(ex.message);
+            }
+        });
+    }
+    search(Request) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const { str } = Request.params;
+                const genres = [
+                    yield flibusta_1.getSearchBooks("book", str),
+                    yield flibusta_1.getSearchBooks("author", str)
+                ];
+                return [...new Set(genres.flat())];
+            }
+            catch (ex) {
+                throw Error(ex.message);
+            }
+        });
+    }
+    book(Request) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const { id } = Request.params;
+                return yield flibusta_1.getBook(id);
+            }
+            catch (ex) {
+                console.error("Book error", ex);
+                throw Error(ex.message);
+            }
+        });
+    }
+    download(Request) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const { id, type } = Request.params;
+                return yield flibusta_1.getBook(id, type);
+            }
+            catch (ex) {
+                console.error("Download error", ex);
                 throw Error(ex.message);
             }
         });
     }
 };
 __decorate([
-    fastify_decorators_1.GET('/author')
-], FlibustaController.prototype, "author", null);
+    fastify_decorators_1.GET('/genrelist')
+], FlibustaController.prototype, "genrelist", null);
 __decorate([
-    fastify_decorators_1.GET('/book.epub')
+    fastify_decorators_1.GET('/genrebooks/:id')
+], FlibustaController.prototype, "genrebooks", null);
+__decorate([
+    fastify_decorators_1.GET('/search/:type/:str')
+], FlibustaController.prototype, "search", null);
+__decorate([
+    fastify_decorators_1.GET('/:id/book.epub')
 ], FlibustaController.prototype, "book", null);
+__decorate([
+    fastify_decorators_1.GET('/download/:id/:type')
+], FlibustaController.prototype, "download", null);
 FlibustaController = __decorate([
     fastify_decorators_1.Controller('/flibusta')
 ], FlibustaController);

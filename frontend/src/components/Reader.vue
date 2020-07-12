@@ -1,11 +1,5 @@
 <template>
   <div class="reader">
-    <div
-      id="controls"
-      v-touch:swipe.left="() => rendition.next()"
-      v-touch:swipe.right="() => rendition.prev()"
-    ></div>
-
     <div v-if="loading">LOADING</div>
     <div id="sidebar">
       <div id="panels">
@@ -89,12 +83,14 @@ import { Component, Prop, Vue } from "vue-property-decorator";
 })
 export default class Reader extends Vue {
   @Prop()
-  private url = "";
+  private id;
 
+  private url = "";
   private loading = false;
   private rendition = null;
 
   async mounted() {
+    console.log(this.id);
     await Promise.all([
       this.$loadScript("../reader/js/jquery.min.js"),
       this.$loadScript("../reader/js/zip.min.js"),
@@ -105,15 +101,32 @@ export default class Reader extends Vue {
 
     // eslint-disable-next-line
      // @ts-ignore
-    window.reader = window.ePubReader(`${this.SERVER_URL}/flibusta/book.epub`, {
-      restore: true,
-      width:
-        parseInt(
-          window.getComputedStyle(document.getElementById("viewer")).width
-        ) * 2,
-      height: parseInt(
-        window.getComputedStyle(document.getElementById("viewer")).height
-      )
+    window.reader = window.ePubReader(
+      `${this.SERVER_URL}/flibusta/${this.id}/book.epub`,
+      {
+        restore: true,
+        width:
+          parseInt(
+            window.getComputedStyle(document.getElementById("viewer")).width
+          ) * 2,
+        height: parseInt(
+          window.getComputedStyle(document.getElementById("viewer")).height
+        )
+      }
+    );
+
+    document.querySelector("#fullscreen").addEventListener("click", event => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+
+      const elem = document.querySelector(".v-main");
+      if (!document.fullscreenElement) {
+        elem.classList.add("noPadding");
+        elem.requestFullscreen();
+      } else {
+        elem.classList.remove("noPadding");
+        document.exitFullscreen();
+      }
     });
 
     this.rendition = window["reader"].book.rendition;
@@ -121,9 +134,12 @@ export default class Reader extends Vue {
 }
 </script>
 
-<style src="../css/normalize.css"></style>
-<style src="../css/main.css"></style>
-<style src="../css/popup.css"></style>
+<style src="../css/normalize.css">
+</style>
+<style src="../css/main.css">
+</style>
+<style src="../css/popup.css">
+</style>
 
 <style scope>
 #viewer {
@@ -138,5 +154,11 @@ export default class Reader extends Vue {
 }
 .arrow {
   z-index: 101;
+}
+.noPadding {
+  padding: 0 !important;
+}
+#slider {
+  display: none !important;
 }
 </style>

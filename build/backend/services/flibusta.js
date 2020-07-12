@@ -9,23 +9,67 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getBookPDF = exports.getBook = exports.authorPage = void 0;
-const cheerio = require("cheerio");
+exports.getBook = exports.getSearchBooks = exports.getGenreList = exports.getGenreBooks = void 0;
+const fs = require("fs");
 const toraxios = require("tor-axios");
-const puppeteer = require("puppeteer");
+const axios_1 = require("axios");
 const fs_1 = require("fs");
+const sequelize_1 = require("sequelize");
+const db_1 = require("../db");
 const tor = toraxios.torSetup({
-    ip: 'localhost',
+    ip: "localhost",
     port: 9050,
 });
-exports.authorPage = (id) => __awaiter(void 0, void 0, void 0, function* () {
-    const response = (yield tor.get(`http://flibustahezeous3.onion/a/${id}`)).data;
-    const $ = cheerio.load(response);
-    const url = $('a[href*="/read"]+a:contains("epub")').get().map((x) => $(x).attr('href'));
-    console.log(url);
-    return url;
+exports.getGenreBooks = (id) => __awaiter(void 0, void 0, void 0, function* () {
+    const genres = yield db_1.LibBook.findAll({
+        include: [
+            {
+                model: db_1.LibGenreList,
+                where: { GenreId: id },
+            },
+            db_1.LibAuthorName,
+        ],
+    });
+    return genres;
 });
-exports.getBook = (id) => __awaiter(void 0, void 0, void 0, function* () {
+exports.getGenreList = () => __awaiter(void 0, void 0, void 0, function* () {
+    const genres = yield db_1.LibGenreList.findAll({});
+    return genres;
+});
+exports.getSearchBooks = (type, str) => __awaiter(void 0, void 0, void 0, function* () {
+    const searchParams = type === "book"
+        ? {
+            Title: {
+                [sequelize_1.Op.like]: `%${str}%`,
+            },
+        }
+        : {
+            "$libavtorname_models.FirstName$": {
+                [sequelize_1.Op.like]: `%${str}%`,
+            },
+            "$libavtorname_models.LastName$": {
+                [sequelize_1.Op.like]: `%${str}%`,
+            },
+        };
+    const books = yield db_1.LibBook.findAll({
+        where: {
+            [sequelize_1.Op.or]: searchParams,
+        },
+        include: [
+            {
+                model: db_1.LibAuthorName,
+                attributes: ["FirstName", "LastName"],
+            },
+            {
+                model: db_1.LibBAnnotation,
+                attributes: ["Body"],
+            },
+        ],
+        attributes: ["BookId", "Title", "Modified", "Deleted"],
+    });
+    return books.filter((x) => x.Deleted !== "1");
+});
+exports.getBook = (id, type = "epub") => __awaiter(void 0, void 0, void 0, function* () {
     const start = Date.now();
     try {
         yield fs_1.promises.mkdir("./cached");
@@ -34,56 +78,32 @@ exports.getBook = (id) => __awaiter(void 0, void 0, void 0, function* () {
         console.error("Folder already exists");
     }
     console.log(1, Date.now() - start);
-    const bookPath = `./cached/book.${id}.epub`;
+    const bookPath = `./cached/book.${id}.${type}`;
     try {
         yield fs_1.promises.stat(bookPath);
-        const fileCached = yield fs_1.promises.readFile(bookPath);
-        console.log('created');
+        const fileCached = yield fs.createReadStream(bookPath);
+        console.log("created");
         return fileCached;
     }
     catch (ex) {
         console.error("File not cached");
     }
     console.log(2, Date.now() - start);
-    const response = (yield tor.get(`http://flibustahezeous3.onion/b/${id}/epub`, {
-        responseType: "arraybuffer"
+    console.log(`http://flibustahezeous3.onion/b/${id}/${type}`);
+    const flibustaUrl = `http://flibusta.is/b/${id}/${type}`;
+    const headInfo = yield axios_1.default(flibustaUrl, { method: "HEAD" });
+    const isFileAvailable = headInfo.status === 200 && headInfo.headers["content-length"] > 50000;
+    console.log("Is download from tor:", !isFileAvailable);
+    const axiosObj = !isFileAvailable ? tor : axios_1.default;
+    const axiosURL = !isFileAvailable
+        ? `http://flibustahezeous3.onion/b/${id}/${type}`
+        : flibustaUrl;
+    const responseStream = (yield axiosObj.get(axiosURL, {
+        responseType: "stream",
+        onDownloadProgress: (progress) => {
+            console.log("Progress", progress);
+        },
     })).data;
-    console.log(3, Date.now() - start);
-    yield fs_1.promises.writeFile(bookPath, response, { encoding: null });
-    return response;
-});
-exports.getBookPDF = (id, width, height) => __awaiter(void 0, void 0, void 0, function* () {
-    console.log(1);
-    try {
-        yield fs_1.promises.mkdir("./cached");
-    }
-    catch (ex) {
-        console.error("Folder already exists");
-    }
-    const bookPath = `./cached/book.${id}.${width}.${height}.pdf`;
-    console.log(2);
-    try {
-        const fileCached = yield fs_1.promises.readFile(bookPath);
-        return fileCached;
-    }
-    catch (ex) {
-        console.error("File not cached");
-    }
-    const response = (yield tor.get(`http://flibustahezeous3.onion/b/${id}/read`)).data;
-    const $ = cheerio.load(response);
-    const html = $('.book').get().map(x => $(x).html()).join('<br>');
-    const browser = yield puppeteer.launch({ headless: true });
-    const page = yield browser.newPage();
-    yield page.setContent(html);
-    const pdf = yield page.pdf({
-        height: height / 0.75,
-        width: width / 0.75,
-        scale: 1 / 0.75,
-        printBackground: true,
-    });
-    console.log(3);
-    yield browser.close();
-    yield fs_1.promises.writeFile(bookPath, pdf);
-    console.log(4);
-    return pdf;
+    responseStream.pipe(fs.createWriteStream(bookPath));
+    return responseStream;
 });
