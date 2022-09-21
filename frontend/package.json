@@ -16,7 +16,7 @@
     "vue-property-decorator": "^8.4.2",
     "vue-router": "^3.2.0",
     "vue2-touch-events": "^2.2.1",
-    "vuetify": "^2.2.11"
+    "vuetify": "^2.6.10"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^2.33.0",
